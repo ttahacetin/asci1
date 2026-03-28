@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aşçı Blok Patlatma - Master Chef Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --puzzle-image: url('./src/asciko.jpeg');
+            --bg-main: radial-gradient(circle at center, #2c3e50 0%, #000 100%);
+            --cell-size: 46px;
+            --gap: 4px;
+            --board-size: calc((var(--cell-size) * 8) + (var(--gap) * 9));
+        }
+
+        body.theme-1 { --bg-main: radial-gradient(circle, #1a1a2e 0%, #000 100%); --accent: #e74c3c; }
+        body.theme-2 { --bg-main: radial-gradient(circle, #0f2027 0%, #2c5364 100%); --accent: #f1c40f; }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; touch-action: none; }
+        
+        body {
+            background: var(--bg-main);
+            color: white;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            transition: background 0.8s ease;
+        }
+
+        .hud {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            z-index: 10;
+        }
+        .stat-box {
+            background: rgba(0,0,0,0.6);
+            padding: 8px 25px;
+            border-radius: 15px;
+            border: 2px solid rgba(255,255,255,0.1);
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .stat-box small { display: block; font-size: 0.7rem; color: #aaa; text-transform: uppercase; }
+        .stat-box span { font-size: 1.6rem; font-weight: 900; color: #fff; }
+
+        #game-container { position: relative; padding: 10px; }
+        
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(8, var(--cell-size));
+            grid-template-rows: repeat(8, var(--cell-size));
+            gap: var(--gap);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px;
+            border-radius: 15px;
+            border: 5px solid #34495e;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background: rgba(255,255,255,0.03);
+            border-radius: 6px;
+            position: relative;
+            transition: background 0.2s;
+        }
+
+        .cell.filled {
+            background-image: var(--puzzle-image);
+            background-repeat: no-repeat;
+            background-size: 396px 396px;
+            border: none;
+            box-shadow: inset 0 4px 6px rgba(255,255,255,0.2), inset 0 -4px 6px rgba(0,0,0,0.4);
+            z-index: 2;
+        }
+
+        .cell.preview { background: rgba(255,255,255,0.4); border: 2px dashed #f1c40f; z-index: 5;}
+
+        /* YENİ PATLAMA EFEKTİ */
+        .cell.exploding {
+            animation: explodeAnim 0.4s ease-out forwards;
+            background-color: #f1c40f !important;
+            box-shadow: 0 0 20px #fff, 0 0 40px #f1c40f;
+            z-index: 10;
+        }
+
+        @keyframes explodeAnim {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.8; border-radius: 50%; }
+            100% { transform: scale(0); opacity: 0; }
+        }
+
+        #tray {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 450px;
+            height: 140px;
+            margin-top: 30px;
+            background: rgba(0,0,0,0.4);
+            border-radius: 25px;
+            padding: 15px;
+            align-items: center;
+        }
+
+        .tray-block {
+            display: grid;
+            gap: 3px;
+            cursor: grab;
+            transform: scale(0.5);
+            transition: transform 0.2s;
+        }
+        .tray-block:active { cursor: grabbing; transform: scale(0.85); }
+
+        .tray-cell { width: 35px; height: 35px; border-radius: 5px; }
+        .tray-cell.active {
+            background: linear-gradient(#ff9f43, #ed6a5a);
+            box-shadow: inset 0 2px 4px rgba(255,255,255,0.4), 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            z-index: 100;
+            font-size: 1.5rem;
+            animation: flyAway 0.8s ease-out forwards;
+        }
+
+        @keyframes flyAway {
+            0% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(0); opacity: 0; }
+        }
+
+        .popup-text {
+            position: absolute;
+            font-weight: 900;
+            color: #f1c40f;
+            text-shadow: 0 0 10px #000;
+            pointer-events: none;
+            z-index: 200;
+            animation: popText 0.6s ease-out forwards;
+        }
+        @keyframes popText { 0% { transform: scale(0); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateY(-50px) scale(1.5); opacity: 0; } }
+
+        #game-over {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95);
+            flex-direction: column; align-items: center; justify-content: center; z-index: 1000;
+        }
+    </style>
+</head>
+<body id="body-main">
+
+    <audio id="s-blast" src="./src/nediyonya.ogg"></audio>
+    <audio id="s-over" src="elenme.mp3"></audio>
+    <audio id="s-theme" src="tema.mp3"></audio>
+
+    <div class="hud">
+        <div class="stat-box"><small>REKOR</small><span id="best-val">0</span></div>
+        <div class="stat-box"><small>SKOR</small><span id="score-val">0</span></div>
+    </div>
+
+    <div id="game-container">
+        <div id="game-board"></div>
+    </div>
+
+    <div id="tray"></div>
+
+    <div id="game-over">
+        <h2 style="font-size: 3rem; color: #ff4757; margin-bottom: 10px;">MUTFAK KAPANDI!</h2>
+        <p style="font-size: 1.5rem; margin-bottom: 25px;">Puanın: <span id="final-val">0</span></p>
+        <button onclick="resetGame()" style="padding: 15px 45px; background: #2ed573; color: white; border: none; border-radius: 12px; font-weight: 800; cursor: pointer;">YENİ SERVİS</button>
+    </div>
+
+    <script>
+        const GRID_SIZE = 8;
+        const CELL_SIZE = 46;
+        const GAP = 4;
+        
+        const boardEl = document.getElementById('game-board');
+        const trayEl = document.getElementById('tray');
+        const scoreEl = document.getElementById('score-val');
+        const bestEl = document.getElementById('best-val');
+        
+        const sBlast = document.getElementById('s-blast');
+        const sOver = document.getElementById('s-over');
+        const sTheme = document.getElementById('s-theme');
+
+        let grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
+        let score = 0;
+        let bestScore = localStorage.getItem('chef_best') || 0;
+        let trayBlocks = [null, null, null];
+        let draggedIndex = -1;
+        let comboCount = 0;
+
+        bestEl.innerText = bestScore;
+
+        const shapes = [
+            [[1]], [[1,1]], [[1],[1]], [[1,1,1]], [[1],[1],[1]], [[1,1],[1,1]], 
+            [[1,1,1],[1,1,1],[1,1,1]], [[1,0],[1,0],[1,1]], [[1,1,1],[0,1,0]],
+            [[1,1,1],[1,0,0]], [[0,1,1],[1,1,0]], [[1,1,1,1]], [[1],[1],[1],[1]]
+        ];
+
+        // Buraya istediğin kadar farklı resim ekleyebilirsin
+        const randomImages = [
+            "url('./src/asciko.jpeg')",
+            "url('./src/asciko2.jpeg')", // Örnek
+            "url('./src/asciko3.jpeg')"  // Örnek
+        ];
+
+        const kitchenEmojis = ['🥕', '🍳', '🧂', '🔪', '🍅', '🔥', '🥣', '🥘'];
+
+        function init() {
+            boardEl.innerHTML = '';
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `cell-${x}-${y}`;
+                    cell.ondragover = (e) => { e.preventDefault(); showPreview(x, y); };
+                    cell.ondrop = (e) => { e.preventDefault(); place(x, y); };
+                    boardEl.appendChild(cell);
+                }
+            }
+            renderTray();
+        }
+
+        // Oyuncuya yardımcı algoritma: Sadece tahtaya sığabilecek blokları verir
+        function getPlayableShape() {
+            const validShapes = shapes.filter(shape => {
+                for (let y = 0; y < GRID_SIZE; y++) {
+                    for (let x = 0; x < GRID_SIZE; x++) {
+                        if (canPlace(shape, x, y, true)) return true;
+                    }
+                }
+                return false;
+            });
+            // Eğer sığacak blok yoksa 1x1 verip kıyak geçiyoruz
+            if (validShapes.length === 0) return shapes[0]; 
+            return validShapes[Math.floor(Math.random() * validShapes.length)];
+        }
+
+        function renderTray() {
+            trayEl.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const shape = getPlayableShape();
+                trayBlocks[i] = shape;
+                const block = document.createElement('div');
+                block.className = 'tray-block';
+                block.draggable = true;
+                block.style.gridTemplateColumns = `repeat(${shape[0].length}, 35px)`;
+                
+                shape.forEach(row => {
+                    row.forEach(v => {
+                        const c = document.createElement('div');
+                        c.className = v ? 'tray-cell active' : 'tray-cell';
+                        block.appendChild(c);
+                    });
+                });
+
+                block.ondragstart = () => { draggedIndex = i; block.style.opacity = '0.3'; };
+                block.ondragend = () => { block.style.opacity = '1'; clearPreview(); };
+                trayEl.appendChild(block);
+            }
+            checkOver();
+        }
+
+        // Bloğun merkez noktasını hesaplıyoruz (Block Blast stili önizleme)
+        function getShapeOffset(shape) {
+            return {
+                x: Math.floor(shape[0].length / 2),
+                y: Math.floor(shape.length / 2)
+            };
+        }
+
+        function canPlace(shape, sx, sy, skipOffset = false) {
+            if (!shape) return false;
+            const offset = skipOffset ? {x:0, y:0} : getShapeOffset(shape);
+            const startX = sx - offset.x;
+            const startY = sy - offset.y;
+
+            for (let y = 0; y < shape.length; y++) {
+                for (let x = 0; x < shape[y].length; x++) {
+                    if (shape[y][x]) {
+                        if (startX + x < 0 || startX + x >= GRID_SIZE || 
+                            startY + y < 0 || startY + y >= GRID_SIZE || 
+                            grid[startY + y][startX + x]) return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function showPreview(sx, sy) {
+            clearPreview();
+            const shape = trayBlocks[draggedIndex];
+            if (!shape) return;
+            const offset = getShapeOffset(shape);
+            const startX = sx - offset.x;
+            const startY = sy - offset.y;
+
+            if (canPlace(shape, sx, sy)) {
+                for (let y = 0; y < shape.length; y++) {
+                    for (let x = 0; x < shape[y].length; x++) {
+                        if (shape[y][x]) document.getElementById(`cell-${startX+x}-${startY+y}`).classList.add('preview');
+                    }
+                }
+            }
+        }
+
+        function clearPreview() { document.querySelectorAll('.cell.preview').forEach(c => c.classList.remove('preview')); }
+
+        function place(sx, sy) {
+            const shape = trayBlocks[draggedIndex];
+            if (!canPlace(shape, sx, sy)) return;
+
+            const offset = getShapeOffset(shape);
+            const startX = sx - offset.x;
+            const startY = sy - offset.y;
+
+            for (let y = 0; y < shape.length; y++) {
+                for (let x = 0; x < shape[y].length; x++) {
+                    if (shape[y][x]) { grid[startY + y][startX + x] = 1; score += 10; }
+                }
+            }
+
+            updateUI();
+            trayBlocks[draggedIndex] = null;
+            trayEl.children[draggedIndex].style.visibility = 'hidden';
+            
+            checkLines();
+            updateScore();
+
+            if (trayBlocks.every(b => b === null)) renderTray();
+            else checkOver();
+        }
+
+        function checkLines() {
+            let r = [], c = [];
+            for (let y = 0; y < GRID_SIZE; y++) if (grid[y].every(v => v === 1)) r.push(y);
+            for (let x = 0; x < GRID_SIZE; x++) if (grid.every(row => row[x] === 1)) c.push(x);
+
+            if (r.length > 0 || c.length > 0) {
+                sBlast.currentTime = 0; sBlast.play().catch(()=>{});
+                r.forEach(y => { for(let x=0; x<GRID_SIZE; x++) explodeCell(x, y); });
+                c.forEach(x => { for(let y=0; y<GRID_SIZE; y++) explodeCell(x, y); });
+                
+                comboCount++;
+                score += (r.length + c.length) * 100 * comboCount;
+                showPopup(comboCount > 1 ? `KOMBO X${comboCount}!` : 'HARİKA!');
+                
+                setTimeout(() => {
+                    // Tüm bloklar temizlenince
+                    if (grid.every(row => row.every(v => v === 0))) {
+                        sTheme.currentTime = 0; sTheme.play(); // Temizlenme Sesi
+                        showPopup('TERTEMİZ MUTFAK!');
+                        score += 1000;
+                        document.getElementById('body-main').classList.toggle('theme-1');
+                        // Rastgele resim değiştir
+                        const newImg = randomImages[Math.floor(Math.random() * randomImages.length)];
+                        document.documentElement.style.setProperty('--puzzle-image', newImg);
+                    }
+                }, 500);
+            } else {
+                comboCount = 0;
+            }
+        }
+
+        function explodeCell(x, y) {
+            grid[y][x] = 0;
+            const el = document.getElementById(`cell-${x}-${y}`);
+            
+            for(let i=0; i<4; i++) {
+                const p = document.createElement('div');
+                p.className = 'particle';
+                p.innerText = kitchenEmojis[Math.floor(Math.random() * kitchenEmojis.length)];
+                p.style.setProperty('--tx', (Math.random() - 0.5) * 250 + 'px');
+                p.style.setProperty('--ty', (Math.random() - 0.5) * 250 + 'px');
+                p.style.setProperty('--tr', Math.random() * 720 + 'deg');
+                el.appendChild(p);
+                setTimeout(() => p.remove(), 800);
+            }
+
+            el.classList.add('exploding'); // Yeni patlama animasyonu eklendi
+            setTimeout(() => {
+                el.classList.remove('filled');
+                el.classList.remove('exploding');
+                el.style.backgroundPosition = '';
+            }, 400);
+        }
+
+        function showPopup(text) {
+            const p = document.createElement('div');
+            p.className = 'popup-text';
+            p.innerText = text;
+            p.style.left = '50%'; p.style.top = '40%';
+            document.body.appendChild(p);
+            setTimeout(() => p.remove(), 600);
+        }
+
+        function updateUI() {
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const el = document.getElementById(`cell-${x}-${y}`);
+                    if (grid[y][x]) {
+                        el.classList.add('filled');
+                        el.style.backgroundPosition = `${-(x * (CELL_SIZE + GAP))}px ${-(y * (CELL_SIZE + GAP))}px`;
+                    }
+                }
+            }
+        }
+
+        function checkOver() {
+            const possible = trayBlocks.some(s => {
+                if (!s) return false;
+                for (let y=0; y<GRID_SIZE; y++) for (let x=0; x<GRID_SIZE; x++) if (canPlace(s, x, y, true)) return true;
+                return false;
+            });
+            if (!possible && trayBlocks.some(b => b !== null)) {
+                sOver.play();
+                document.getElementById('final-val').innerText = score;
+                document.getElementById('game-over').style.display = 'flex';
+                if (score > bestScore) localStorage.setItem('chef_best', score);
+            }
+        }
+
+        function updateScore() {
+            scoreEl.innerText = score;
+            if (score > bestScore) { bestScore = score; bestEl.innerText = score; }
+        }
+
+        function resetGame() {
+            grid = grid.map(row => row.fill(0));
+            score = 0; comboCount = 0;
+            updateScore();
+            init();
+            document.getElementById('game-over').style.display = 'none';
+        }
+
+        init();
+    </script>
+</body>
+</html>
