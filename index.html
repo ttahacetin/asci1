@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Aşçı Blok Patlatma - Master Chef Edition</title>
+    <title>Aşçı Blok Patlatma - Mobil Master Chef</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --puzzle-image: url('./src/asciko.jpeg');
+            --puzzle-image: url('./src/ascizillo.jpeg');
             --bg-main: radial-gradient(circle at center, #2c3e50 0%, #000 100%);
             --cell-size: 46px;
             --gap: 4px;
-            --board-size: calc((var(--cell-size) * 8) + (var(--gap) * 9));
+            --scale: 1; /* Dinamik mobil ölçekleme için */
         }
 
         body.theme-1 { --bg-main: radial-gradient(circle, #1a1a2e 0%, #000 100%); --accent: #e74c3c; }
         body.theme-2 { --bg-main: radial-gradient(circle, #0f2027 0%, #2c5364 100%); --accent: #f1c40f; }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; touch-action: none; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
         
         body {
             background: var(--bg-main);
@@ -29,6 +29,17 @@
             justify-content: center;
             overflow: hidden;
             transition: background 0.8s ease;
+        }
+
+        /* Tüm oyunu saran ve mobilde küçülen ana kap */
+        #scale-wrapper {
+            transform: scale(var(--scale));
+            transform-origin: center center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
         }
 
         .hud {
@@ -82,7 +93,6 @@
 
         .cell.preview { background: rgba(255,255,255,0.4); border: 2px dashed #f1c40f; z-index: 5;}
 
-        /* YENİ PATLAMA EFEKTİ */
         .cell.exploding {
             animation: explodeAnim 0.4s ease-out forwards;
             background-color: #f1c40f !important;
@@ -99,8 +109,7 @@
         #tray {
             display: flex;
             justify-content: space-around;
-            width: 100%;
-            max-width: 450px;
+            width: 420px; /* Sabit tuttum, ölçekleme halledecek */
             height: 140px;
             margin-top: 30px;
             background: rgba(0,0,0,0.4);
@@ -113,7 +122,7 @@
             display: grid;
             gap: 3px;
             cursor: grab;
-            transform: scale(0.5);
+            transform: scale(0.6);
             transition: transform 0.2s;
         }
         .tray-block:active { cursor: grabbing; transform: scale(0.85); }
@@ -160,16 +169,18 @@
     <audio id="s-over" src="elenme.mp3"></audio>
     <audio id="s-theme" src="tema.mp3"></audio>
 
-    <div class="hud">
-        <div class="stat-box"><small>REKOR</small><span id="best-val">0</span></div>
-        <div class="stat-box"><small>SKOR</small><span id="score-val">0</span></div>
-    </div>
+    <div id="scale-wrapper">
+        <div class="hud">
+            <div class="stat-box"><small>REKOR</small><span id="best-val">0</span></div>
+            <div class="stat-box"><small>SKOR</small><span id="score-val">0</span></div>
+        </div>
 
-    <div id="game-container">
-        <div id="game-board"></div>
-    </div>
+        <div id="game-container">
+            <div id="game-board"></div>
+        </div>
 
-    <div id="tray"></div>
+        <div id="tray"></div>
+    </div>
 
     <div id="game-over">
         <h2 style="font-size: 3rem; color: #ff4757; margin-bottom: 10px;">MUTFAK KAPANDI!</h2>
@@ -195,8 +206,13 @@
         let score = 0;
         let bestScore = localStorage.getItem('chef_best') || 0;
         let trayBlocks = [null, null, null];
-        let draggedIndex = -1;
         let comboCount = 0;
+
+        // Mobil Dokunmatik Değişkenleri
+        let isDragging = false;
+        let draggedIndex = -1;
+        let floatingBlock = null;
+        let currentTargetCell = null;
 
         bestEl.innerText = bestScore;
 
@@ -206,14 +222,21 @@
             [[1,1,1],[1,0,0]], [[0,1,1],[1,1,0]], [[1,1,1,1]], [[1],[1],[1],[1]]
         ];
 
-        // Buraya istediğin kadar farklı resim ekleyebilirsin
         const randomImages = [
             "url('./src/asciko.jpeg')",
-            "url('./src/asciko2.jpeg')", // Örnek
-            "url('./src/asciko3.jpeg')"  // Örnek
+            "url('./src/ascı.jpeg')",
+            "url('./src/ascizillo.jpeg')" 
         ];
 
         const kitchenEmojis = ['🥕', '🍳', '🧂', '🔪', '🍅', '🔥', '🥣', '🥘'];
+
+        // Ekran boyutuna göre ölçekleme (Mobilde taşmayı önler)
+        function updateScale() {
+            const scale = Math.min(1, window.innerWidth / 440);
+            document.documentElement.style.setProperty('--scale', scale);
+        }
+        window.addEventListener('resize', updateScale);
+        updateScale();
 
         function init() {
             boardEl.innerHTML = '';
@@ -222,15 +245,12 @@
                     const cell = document.createElement('div');
                     cell.className = 'cell';
                     cell.id = `cell-${x}-${y}`;
-                    cell.ondragover = (e) => { e.preventDefault(); showPreview(x, y); };
-                    cell.ondrop = (e) => { e.preventDefault(); place(x, y); };
                     boardEl.appendChild(cell);
                 }
             }
             renderTray();
         }
 
-        // Oyuncuya yardımcı algoritma: Sadece tahtaya sığabilecek blokları verir
         function getPlayableShape() {
             const validShapes = shapes.filter(shape => {
                 for (let y = 0; y < GRID_SIZE; y++) {
@@ -240,7 +260,6 @@
                 }
                 return false;
             });
-            // Eğer sığacak blok yoksa 1x1 verip kıyak geçiyoruz
             if (validShapes.length === 0) return shapes[0]; 
             return validShapes[Math.floor(Math.random() * validShapes.length)];
         }
@@ -252,7 +271,6 @@
                 trayBlocks[i] = shape;
                 const block = document.createElement('div');
                 block.className = 'tray-block';
-                block.draggable = true;
                 block.style.gridTemplateColumns = `repeat(${shape[0].length}, 35px)`;
                 
                 shape.forEach(row => {
@@ -263,14 +281,76 @@
                     });
                 });
 
-                block.ondragstart = () => { draggedIndex = i; block.style.opacity = '0.3'; };
-                block.ondragend = () => { block.style.opacity = '1'; clearPreview(); };
+                // Mobilde ve Web'de çalışan özel sürükleme
+                block.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    draggedIndex = i;
+                    isDragging = true;
+                    
+                    floatingBlock = block.cloneNode(true);
+                    floatingBlock.style.position = 'fixed';
+                    floatingBlock.style.pointerEvents = 'none'; // Hedefi bulabilmek için
+                    floatingBlock.style.zIndex = '9999';
+                    floatingBlock.style.transform = `translate(-50%, -50%) scale(${document.documentElement.style.getPropertyValue('--scale') || 1})`;
+                    document.body.appendChild(floatingBlock);
+                    
+                    block.style.opacity = '0.1';
+                    moveGhost(e);
+                });
+
                 trayEl.appendChild(block);
             }
             checkOver();
         }
 
-        // Bloğun merkez noktasını hesaplıyoruz (Block Blast stili önizleme)
+        // Fare veya parmak hareket edince
+        document.addEventListener('pointermove', (e) => {
+            if (!isDragging || !floatingBlock) return;
+            moveGhost(e);
+            
+            // Parmağın/farenin 80px üstü tam olarak hayalet bloğun merkezi (Block Blast tarzı)
+            const ghostX = e.clientX;
+            const ghostY = e.clientY - 90; 
+            
+            const el = document.elementFromPoint(ghostX, ghostY);
+            if (el && el.classList.contains('cell')) {
+                const parts = el.id.split('-');
+                currentTargetCell = { x: parseInt(parts[1]), y: parseInt(parts[2]) };
+                showPreview(currentTargetCell.x, currentTargetCell.y);
+            } else {
+                clearPreview();
+                currentTargetCell = null;
+            }
+        });
+
+        // Bırakınca
+        document.addEventListener('pointerup', (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            
+            if (floatingBlock) {
+                floatingBlock.remove();
+                floatingBlock = null;
+            }
+            
+            if (currentTargetCell) {
+                place(currentTargetCell.x, currentTargetCell.y);
+            } else {
+                if(trayEl.children[draggedIndex]) {
+                    trayEl.children[draggedIndex].style.opacity = '1';
+                }
+            }
+            clearPreview();
+            currentTargetCell = null;
+            draggedIndex = -1;
+        });
+
+        function moveGhost(e) {
+            // Parmağın 90px üstünde havada asılı kalır
+            floatingBlock.style.left = e.clientX + 'px';
+            floatingBlock.style.top = (e.clientY - 90) + 'px';
+        }
+
         function getShapeOffset(shape) {
             return {
                 x: Math.floor(shape[0].length / 2),
@@ -317,7 +397,10 @@
 
         function place(sx, sy) {
             const shape = trayBlocks[draggedIndex];
-            if (!canPlace(shape, sx, sy)) return;
+            if (!canPlace(shape, sx, sy)) {
+                trayEl.children[draggedIndex].style.opacity = '1';
+                return;
+            }
 
             const offset = getShapeOffset(shape);
             const startX = sx - offset.x;
@@ -355,13 +438,12 @@
                 showPopup(comboCount > 1 ? `KOMBO X${comboCount}!` : 'HARİKA!');
                 
                 setTimeout(() => {
-                    // Tüm bloklar temizlenince
                     if (grid.every(row => row.every(v => v === 0))) {
-                        sTheme.currentTime = 0; sTheme.play(); // Temizlenme Sesi
+                        sTheme.currentTime = 0; sTheme.play();
                         showPopup('TERTEMİZ MUTFAK!');
                         score += 1000;
                         document.getElementById('body-main').classList.toggle('theme-1');
-                        // Rastgele resim değiştir
+                        
                         const newImg = randomImages[Math.floor(Math.random() * randomImages.length)];
                         document.documentElement.style.setProperty('--puzzle-image', newImg);
                     }
@@ -386,7 +468,7 @@
                 setTimeout(() => p.remove(), 800);
             }
 
-            el.classList.add('exploding'); // Yeni patlama animasyonu eklendi
+            el.classList.add('exploding');
             setTimeout(() => {
                 el.classList.remove('filled');
                 el.classList.remove('exploding');
